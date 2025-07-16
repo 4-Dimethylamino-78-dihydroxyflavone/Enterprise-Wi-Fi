@@ -21,3 +21,12 @@ There is another app that fulfills this need on Android TV, although I have foun
 <img src='https://github.com/ITVlab/Enterprise-Wi-Fi/blob/master/promo/device-2016-09-07-012808.png?raw=true' />
 
 <img src='https://github.com/ITVlab/Enterprise-Wi-Fi/blob/master/promo/device-2016-09-07-012756.png?raw=true' />
+
+### Western Sydney University preset
+When the SSID **Western Wifi** is selected, the app automatically configures the connection using PEAP and MSCHAPV2 with the domain `westernsydney.edu.au`. It will also apply the `DigiCertGlobalRootG2` CA certificate if available in the system store. If the certificate is missing you will be prompted to install it from **Settings → Security → Install certificates**.
+
+### Android 10 and newer
+Starting with Android 10, third-party apps can no longer directly add Wi‑Fi configurations. On these versions the app now uses **network suggestions**. After you press Connect you will be asked to confirm the suggestion in the system Wi‑Fi settings.
+## Building
+To build with recent Android Studio, update the Gradle wrapper and plugin. This repo now targets SDK 34 and uses Gradle plugin 8.1.0. Run `./gradlew assembleDebug` to create an APK.
+

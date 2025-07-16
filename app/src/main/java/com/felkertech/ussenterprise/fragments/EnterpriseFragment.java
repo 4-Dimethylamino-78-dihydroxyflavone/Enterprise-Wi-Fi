@@ -14,7 +14,9 @@ import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WifiNetworkSuggestion;
 import android.os.Bundle;
+import android.os.Build;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.AlertDialog;
@@ -29,6 +31,9 @@ import android.widget.ImageView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.security.KeyStore;
+import java.security.cert.X509Certificate;
 
 import com.felkertech.ussenterprise.R;
 import com.felkertech.ussenterprise.activities.MainActivity;
@@ -309,34 +314,119 @@ public class EnterpriseFragment extends Fragment {
     }
 
     public void connect(EnterpriseWifiConnection connection) {
-        WifiEnterpriseConfig enterpriseConfig = new WifiEnterpriseConfig();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            connectWithSuggestion(connection);
+            return;
+        }
+
+        WifiEnterpriseConfig enterpriseConfig = buildEnterpriseConfig(connection);
         WifiConfiguration wifiConfig = new WifiConfiguration();
-        wifiConfig.SSID = connection.getSsid();
+        wifiConfig.SSID = "\"" + connection.getSsid() + "\"";
         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_EAP);
         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.IEEE8021X);
-        enterpriseConfig.setIdentity(connection.getIdentity());
-        enterpriseConfig.setPassword(connection.getPassword());
-        enterpriseConfig.setEapMethod(connection.getEap());
-        enterpriseConfig.setPhase2Method(connection.getPhase2());
         wifiConfig.enterpriseConfig = enterpriseConfig;
-        Logd("Create connection to '" + ssid + "'");
-        SavedWifiDatabase.getInstance(getActivity()).addNetwork(connection);
 
-//        startListeningToLogs();
+        Logd("Create connection to '" + connection.getSsid() + "'");
+        SavedWifiDatabase.getInstance(getActivity()).addNetwork(connection);
 
         addNetwork(wifiConfig);
     }
 
+    private WifiEnterpriseConfig buildEnterpriseConfig(EnterpriseWifiConnection connection) {
+        WifiEnterpriseConfig enterpriseConfig = new WifiEnterpriseConfig();
+        enterpriseConfig.setIdentity(connection.getIdentity());
+        enterpriseConfig.setPassword(connection.getPassword());
+
+        if ("Western Wifi".equalsIgnoreCase(connection.getSsid())) {
+            enterpriseConfig.setEapMethod(WifiEnterpriseConfig.Eap.PEAP);
+            enterpriseConfig.setPhase2Method(WifiEnterpriseConfig.Phase2.MSCHAPV2);
+            enterpriseConfig.setDomainSuffixMatch("westernsydney.edu.au");
+            X509Certificate ca = findCaCertificate("DigiCertGlobalRootG2");
+            if (ca != null) {
+                enterpriseConfig.setCaCertificate(ca);
+            } else {
+                Toast.makeText(getActivity(),
+                        "DigiCertGlobalRootG2 certificate missing. Install via Settings > Security > Install certificates",
+                        Toast.LENGTH_LONG).show();
+            }
+            enterpriseConfig.setAnonymousIdentity("");
+        } else {
+            enterpriseConfig.setEapMethod(connection.getEap());
+            enterpriseConfig.setPhase2Method(connection.getPhase2());
+        }
+        return enterpriseConfig;
+    }
+
+    private void connectWithSuggestion(EnterpriseWifiConnection connection) {
+        WifiManager wifiManager = (WifiManager) getActivity().getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+        if (wifiManager == null) {
+            Toast.makeText(getActivity(), "Wi-Fi service unavailable", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        WifiEnterpriseConfig enterpriseConfig = buildEnterpriseConfig(connection);
+        WifiNetworkSuggestion suggestion = new WifiNetworkSuggestion.Builder()
+                .setSsid(connection.getSsid())
+                .setWpa2EnterpriseConfig(enterpriseConfig)
+                .setIsAppInteractionRequired(true)
+                .build();
+        List<WifiNetworkSuggestion> suggestions = java.util.Collections.singletonList(suggestion);
+        int status = wifiManager.addNetworkSuggestions(suggestions);
+        if (status != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+            Logd("Suggestion error: " + status);
+            Toast.makeText(getActivity(), "Failed to add network suggestion", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(getActivity(), "Suggestion added. Confirm in Wi-Fi settings", Toast.LENGTH_LONG).show();
+        }
+    }
+
     public void addNetwork(WifiConfiguration configuration) {
         WifiManager wifiManager = (WifiManager) getActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        wifiManager.addNetwork(configuration);
-        Logd("Add network '" + configuration.SSID + "' to Wi-Fi Manager");
-        rescanAndConnect();
+        if (wifiManager == null) {
+            Toast.makeText(getActivity(), "Wi-Fi service unavailable", Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            int id = wifiManager.addNetwork(configuration);
+            if (id == -1) {
+                Toast.makeText(getActivity(), "Failed to add network", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Logd("Add network '" + configuration.SSID + "' to Wi-Fi Manager");
+            rescanAndConnect();
+        } catch (SecurityException e) {
+            Logd("Add network security exception: " + e.getMessage());
+            Toast.makeText(getActivity(), "Permission denied to add network", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Logd("Error adding network: " + e.getMessage());
+            Toast.makeText(getActivity(), "Unable to add network", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private X509Certificate findCaCertificate(String name) {
+        try {
+            KeyStore ks = KeyStore.getInstance("AndroidCAStore");
+            ks.load(null);
+            java.util.Enumeration<String> aliases = ks.aliases();
+            while (aliases.hasMoreElements()) {
+                String alias = aliases.nextElement();
+                if (alias.toLowerCase().contains(name.toLowerCase())) {
+                    return (X509Certificate) ks.getCertificate(alias);
+                }
+            }
+        } catch (Exception e) {
+            Logd("Failed to find CA certificate: " + e.getMessage());
+        }
+        return null;
     }
 
     public void printSavedWifiNetworks() {
         final WifiManager wifiManager = (WifiManager) getActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-
+        if (wifiManager == null) {
+            Logd("Wi-Fi service unavailable");
+            return;
+        }
         List<WifiConfiguration> list = wifiManager.getConfiguredNetworks();
         if (list != null) {
             for (WifiConfiguration i : list) {
@@ -348,8 +438,15 @@ public class EnterpriseFragment extends Fragment {
 
     public void rescanAndConnect() {
         final WifiManager wifiManager = (WifiManager) getActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-
+        if (wifiManager == null) {
+            Logd("Wi-Fi service unavailable");
+            return;
+        }
         List<WifiConfiguration> list = wifiManager.getConfiguredNetworks();
+        if (list == null) {
+            Logd("No configured networks found");
+            return;
+        }
         for (WifiConfiguration i : list) {
             Log.d(TAG, "Found wifi " + i.SSID);
             if(i.SSID != null && i.SSID.equals("\"" + ssid + "\"")) {
@@ -379,11 +476,17 @@ public class EnterpriseFragment extends Fragment {
             ((MainActivity) getActivity()).requestLocationPermission();
         } else {
             final WifiManager wifiManager = (WifiManager) getActivity().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifiManager == null) {
+                Logd("Wi-Fi service unavailable");
+                return ssids;
+            }
             List<ScanResult> scanResults = wifiManager.getScanResults();
-            for (ScanResult scanResult : scanResults) {
-                Log.d(TAG , scanResult.SSID + " " + scanResult.capabilities);
-                if (scanResult.capabilities.contains("EAP") && !ssids.contains(scanResult.SSID)) {
-                    ssids.add(scanResult.SSID);
+            if (scanResults != null) {
+                for (ScanResult scanResult : scanResults) {
+                    Log.d(TAG , scanResult.SSID + " " + scanResult.capabilities);
+                    if (scanResult.capabilities.contains("EAP") && !ssids.contains(scanResult.SSID)) {
+                        ssids.add(scanResult.SSID);
+                    }
                 }
             }
         }
