@@ -21,3 +21,6 @@ There is another app that fulfills this need on Android TV, although I have foun
 <img src='https://github.com/ITVlab/Enterprise-Wi-Fi/blob/master/promo/device-2016-09-07-012808.png?raw=true' />
 
 <img src='https://github.com/ITVlab/Enterprise-Wi-Fi/blob/master/promo/device-2016-09-07-012756.png?raw=true' />
+## Building
+To build with recent Android Studio, update the Gradle wrapper and plugin. This repo now targets SDK 34 and uses Gradle plugin 8.1.0. Run `./gradlew assembleDebug` to create an APK.
+

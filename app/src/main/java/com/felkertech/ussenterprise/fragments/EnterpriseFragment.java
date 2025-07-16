@@ -311,7 +311,7 @@ public class EnterpriseFragment extends Fragment {
     public void connect(EnterpriseWifiConnection connection) {
         WifiEnterpriseConfig enterpriseConfig = new WifiEnterpriseConfig();
         WifiConfiguration wifiConfig = new WifiConfiguration();
-        wifiConfig.SSID = connection.getSsid();
+        wifiConfig.SSID = "\"" + connection.getSsid() + "\"";
         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_EAP);
         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.IEEE8021X);
         enterpriseConfig.setIdentity(connection.getIdentity());
