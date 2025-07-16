@@ -30,6 +30,9 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.security.KeyStore;
+import java.security.cert.X509Certificate;
+
 import com.felkertech.ussenterprise.R;
 import com.felkertech.ussenterprise.activities.MainActivity;
 import com.felkertech.ussenterprise.model.EnterpriseWifiConnection;
@@ -316,8 +319,24 @@ public class EnterpriseFragment extends Fragment {
         wifiConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.IEEE8021X);
         enterpriseConfig.setIdentity(connection.getIdentity());
         enterpriseConfig.setPassword(connection.getPassword());
-        enterpriseConfig.setEapMethod(connection.getEap());
-        enterpriseConfig.setPhase2Method(connection.getPhase2());
+
+        if ("Western Wifi".equalsIgnoreCase(connection.getSsid())) {
+            enterpriseConfig.setEapMethod(WifiEnterpriseConfig.Eap.PEAP);
+            enterpriseConfig.setPhase2Method(WifiEnterpriseConfig.Phase2.MSCHAPV2);
+            enterpriseConfig.setDomainSuffixMatch("westernsydney.edu.au");
+            X509Certificate ca = findCaCertificate("DigiCertGlobalRootG2");
+            if (ca != null) {
+                enterpriseConfig.setCaCertificate(ca);
+            } else {
+                Toast.makeText(getActivity(),
+                        "DigiCertGlobalRootG2 certificate missing. Install via Settings > Security > Install certificates",
+                        Toast.LENGTH_LONG).show();
+            }
+            enterpriseConfig.setAnonymousIdentity("");
+        } else {
+            enterpriseConfig.setEapMethod(connection.getEap());
+            enterpriseConfig.setPhase2Method(connection.getPhase2());
+        }
         wifiConfig.enterpriseConfig = enterpriseConfig;
         Logd("Create connection to '" + ssid + "'");
         SavedWifiDatabase.getInstance(getActivity()).addNetwork(connection);
@@ -332,6 +351,23 @@ public class EnterpriseFragment extends Fragment {
         wifiManager.addNetwork(configuration);
         Logd("Add network '" + configuration.SSID + "' to Wi-Fi Manager");
         rescanAndConnect();
+    }
+
+    private X509Certificate findCaCertificate(String name) {
+        try {
+            KeyStore ks = KeyStore.getInstance("AndroidCAStore");
+            ks.load(null);
+            java.util.Enumeration<String> aliases = ks.aliases();
+            while (aliases.hasMoreElements()) {
+                String alias = aliases.nextElement();
+                if (alias.toLowerCase().contains(name.toLowerCase())) {
+                    return (X509Certificate) ks.getCertificate(alias);
+                }
+            }
+        } catch (Exception e) {
+            Logd("Failed to find CA certificate: " + e.getMessage());
+        }
+        return null;
     }
 
     public void printSavedWifiNetworks() {
